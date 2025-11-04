@@ -19,11 +19,12 @@ app.use(express.json());
 // Test endpoint
 app.get('/api/ping', (req, res) => res.json({ msg: 'pong' }));
 
+// ------------------- Existing Endpoints ------------------- //
+
 // Get travel recommendations with AI toggle and save to database
 app.post('/api/recommend', async (req, res) => {
   try {
     const { destination, useAI } = req.body;
-    console.log('Received request:', { destination, useAI, bodyType: typeof useAI });
     if (!destination) {
       return res.status(400).json({ error: 'Destination is required' });
     }
@@ -31,34 +32,25 @@ app.post('/api/recommend', async (req, res) => {
     let recommendation;
     let mode = 'Mock';
 
-    // Mock data for fallback
+    // Mock data
     const mockRecommendations = {
-      'Paris': '1. Visit the Eiffel Tower early morning to avoid crowds. 2. Try authentic croissants at local boulangeries. 3. Get a Museum Pass for unlimited entries to major attractions.',
-      'Tokyo': '1. Get a Suica card for easy subway travel. 2. Try conveyor belt sushi for an authentic experience. 3. Visit temples early in the morning for peaceful moments.',
-      'New York': '1. Walk the High Line for unique city views. 2. Visit museums on weekday mornings to skip crowds. 3. Try pizza by the slice from local spots.',
-      'London': '1. Use an Oyster card for the Tube to save money. 2. Visit museums during weekdays as most are free. 3. Try traditional afternoon tea at a local café.',
-      'Rome': '1. Book Colosseum tickets online to skip long lines. 2. Explore Trastevere neighborhood for authentic Italian cuisine. 3. Dress modestly when visiting Vatican and churches.',
+      Paris: '1. Visit the Eiffel Tower early morning. 2. Try local croissants. 3. Get a Museum Pass.',
+      Tokyo: '1. Get a Suica card. 2. Try conveyor belt sushi. 3. Visit temples early.',
+      'New York': '1. Walk the High Line. 2. Visit museums on weekdays. 3. Try pizza by the slice.',
+      London: '1. Use an Oyster card. 2. Visit museums during weekdays. 3. Try afternoon tea.',
+      Rome: '1. Book Colosseum tickets online. 2. Explore Trastevere. 3. Dress modestly in churches.',
     };
 
     if (useAI) {
-      // Try real OpenAI call
       try {
         const OpenAI = require('openai');
-        const openai = new OpenAI({
-          apiKey: process.env.OPENAI_API_KEY,
-        });
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: 'gpt-4o-mini',
           messages: [
-            {
-              role: "system",
-              content: "You are a helpful travel assistant. Provide concise, practical travel recommendations."
-            },
-            {
-              role: "user",
-              content: `Give me 3 quick travel tips for visiting ${destination}. Keep each tip to one sentence.`
-            }
+            { role: 'system', content: 'You are a helpful travel assistant. Provide concise tips.' },
+            { role: 'user', content: `Give 3 quick tips for visiting ${destination}. Keep it short.` },
           ],
           max_tokens: 200,
         });
@@ -67,19 +59,13 @@ app.post('/api/recommend', async (req, res) => {
         mode = 'AI';
       } catch (aiError) {
         console.error('OpenAI API Error:', aiError.message);
-        // Return error to user so they know AI mode failed
-        return res.status(503).json({ 
-          error: `AI mode failed: ${aiError.message}. Try toggling to Mock mode.`,
-          mode: 'AI (Failed)'
-        });
+        return res.status(503).json({ error: `AI mode failed: ${aiError.message}`, mode: 'AI (Failed)' });
       }
     } else {
-      // Use mock data
       recommendation = mockRecommendations[destination] || 
-        `1. Research the local culture before visiting ${destination}. 2. Try the local cuisine at family-owned restaurants. 3. Learn a few basic phrases in the local language.`;
+        `1. Research the local culture in ${destination}. 2. Try local cuisine. 3. Learn basic phrases.`;
     }
-    
-    // Save to Supabase
+
     const { data, error } = await supabase
       .from('destinations')
       .insert([{ destination, recommendation }])
@@ -90,14 +76,7 @@ app.post('/api/recommend', async (req, res) => {
       return res.status(500).json({ error: 'Failed to save to database' });
     }
 
-    res.json({ 
-      destination,
-      recommendation,
-      saved: true,
-      id: data[0].id,
-      mode: mode
-    });
-
+    res.json({ destination, recommendation, saved: true, id: data[0].id, mode });
   } catch (error) {
     console.error('API Error:', error);
     res.status(500).json({ error: 'Failed to get recommendation' });
@@ -113,10 +92,7 @@ app.get('/api/destinations', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(10);
 
-    if (error) {
-      console.error('Supabase error:', error);
-      return res.status(500).json({ error: 'Failed to fetch destinations' });
-    }
+    if (error) throw error;
 
     res.json({ destinations: data });
   } catch (error) {
@@ -128,16 +104,8 @@ app.get('/api/destinations', async (req, res) => {
 // Delete all destinations
 app.delete('/api/destinations', async (req, res) => {
   try {
-    const { error } = await supabase
-      .from('destinations')
-      .delete()
-      .neq('id', 0); // Delete all rows (neq with impossible condition deletes everything)
-
-    if (error) {
-      console.error('Supabase error:', error);
-      return res.status(500).json({ error: 'Failed to clear history' });
-    }
-
+    const { error } = await supabase.from('destinations').delete().neq('id', 0);
+    if (error) throw error;
     res.json({ success: true, message: 'History cleared' });
   } catch (error) {
     console.error('API Error:', error);
@@ -145,4 +113,39 @@ app.delete('/api/destinations', async (req, res) => {
   }
 });
 
+// ------------------- New Endpoint: Vibe Search ------------------- //
+app.post('/api/vibe-search', async (req, res) => {
+  try {
+    const { vibeDescription } = req.body;
+    if (!vibeDescription) return res.status(400).json({ error: 'Vibe description is required' });
+
+    // Fetch all destinations
+    const { data: destinations, error } = await supabase.from('destinations').select('*');
+    if (error) throw error;
+
+    // Filter out top visited destinations
+    const MAX_VISITS = 5000000; // adjust as needed
+    const filtered = destinations.filter(d => !d.visitsPerYear || d.visitsPerYear < MAX_VISITS);
+
+    // Match vibe description against tags
+    const matches = filtered
+      .map(d => {
+        const keywords = d.tags || [];
+        const matchScore = keywords.reduce((score, tag) => {
+          return vibeDescription.toLowerCase().includes(tag.toLowerCase()) ? score + 1 : score;
+        }, 0);
+        return { ...d, matchScore };
+      })
+      .filter(d => d.matchScore > 0)
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, 10); // top 10 matches
+
+    res.json({ matches });
+  } catch (error) {
+    console.error('Vibe Search Error:', error);
+    res.status(500).json({ error: 'Failed to find matches' });
+  }
+});
+
+// ------------------- Start Server ------------------- //
 app.listen(port, () => console.log(`Backend listening on ${port}`));
