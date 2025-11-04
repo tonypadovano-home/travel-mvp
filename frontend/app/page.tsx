@@ -1,0 +1,209 @@
+"use client"
+
+import { useState, useEffect } from 'react';
+
+export default function Home() {
+  const [destination, setDestination] = useState('');
+  const [recommendation, setRecommendation] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [useAI, setUseAI] = useState(false);
+  const [lastMode, setLastMode] = useState('');
+
+  // Fetch search history on load
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+const fetchHistory = async () => {
+  try {
+    const response = await fetch('http://localhost:4000/api/destinations');
+    const data = await response.json();
+    setHistory(data.destinations || []);
+  } catch (error) {
+    console.error('Error fetching history:', error);
+  }
+};
+
+const clearHistory = async () => {
+  if (!confirm('Are you sure you want to clear all search history?')) {
+    return;
+  }
+  
+  try {
+    const response = await fetch('http://localhost:4000/api/destinations', {
+      method: 'DELETE'
+    });
+    
+    if (response.ok) {
+      setHistory([]);
+      alert('History cleared!');
+    }
+  } catch (error) {
+    console.error('Error clearing history:', error);
+    alert('Failed to clear history');
+  }
+};
+
+  const getRecommendations = async () => {
+    if (!destination.trim()) return;
+    
+    setLoading(true);
+    setRecommendation('');
+    setLastMode('');
+    
+    try {
+      const response = await fetch('http://localhost:4000/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destination, useAI })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setRecommendation(data.recommendation);
+        setLastMode(data.mode);
+        // Refresh history after new search
+        fetchHistory();
+      } else {
+        setRecommendation(`Error: ${data.error || 'Failed to get recommendations'}`);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setRecommendation('Failed to get recommendations. Please try again.');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-4xl font-bold text-center text-gray-800 mb-8">
+          ✈️ Travel Recommender
+        </h1>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Main search section */}
+          <div className="md:col-span-2">
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              {/* AI Toggle */}
+              <div className="mb-4 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-gray-800">
+                    {useAI ? '🤖 AI Mode (OpenAI)' : '📝 Mock Mode'}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {useAI 
+                      ? 'Using real OpenAI API (requires credits)' 
+                      : 'Using pre-written responses (free)'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setUseAI(!useAI)}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                    useAI ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                      useAI ? 'translate-x-7' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-gray-700 font-semibold mb-2">
+                  Where do you want to go?
+                </label>
+                <input
+                  type="text"
+                  value={destination}
+                  onChange={(e) => setDestination(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && getRecommendations()}
+                  placeholder="e.g., Paris, Tokyo, New York..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
+                />
+              </div>
+              
+              <button
+                onClick={getRecommendations}
+                disabled={loading || !destination.trim()}
+                className="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
+              >
+                {loading ? 'Getting recommendations...' : 'Get Travel Tips'}
+              </button>
+              
+              {recommendation && (
+                <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className="font-semibold text-gray-800">
+                      Tips for {destination}:
+                    </h2>
+                    {lastMode && (
+                      <span className="text-xs px-2 py-1 bg-blue-200 text-blue-800 rounded">
+                        {lastMode}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-gray-700 whitespace-pre-line">
+                    {recommendation}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+            {/* Search history sidebar */}
+            <div className="md:col-span-1">
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-800">
+                📍 Recent Searches
+              </h2>
+              <button
+                onClick={clearHistory}
+                disabled={history.length === 0}
+                className={`text-sm px-3 py-1 rounded-md font-medium transition ${
+                history.length === 0
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  : 'bg-red-100 text-red-700 hover:bg-red-200'
+                }`}
+                aria-label="Clear search history"
+              >
+                Clear
+              </button>
+              </div>
+
+              {history.length === 0 ? (
+              <p className="text-gray-500 text-sm">No searches yet</p>
+              ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {history.map((item) => (
+                <div 
+                  key={item.id}
+                  className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition"
+                  onClick={() => {
+                  setDestination(item.destination);
+                  setRecommendation(item.recommendation);
+                  setLastMode('History');
+                  }}
+                >
+                  <p className="font-semibold text-gray-800">
+                  {item.destination}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                  {new Date(item.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                ))}
+              </div>
+              )}
+            </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+}
