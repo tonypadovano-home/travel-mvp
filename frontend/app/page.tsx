@@ -6,7 +6,7 @@ export default function Home() {
   const [destination, setDestination] = useState('');
   const [recommendation, setRecommendation] = useState('');
   const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState<any[]>([]);
   const [useAI, setUseAI] = useState(false);
   const [lastMode, setLastMode] = useState('');
 
